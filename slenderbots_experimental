@@ -34,8 +34,12 @@ new bool:BsetupComp;
 
 new iPageCounter = -1;
 
-// what the helly we doing with this goofy-ahh bool
-new bool:g_IsBotSprinting[MAXPLAYERS + 1]
+#define SCARE_SPRINT_SPEED 190.0
+#define SCARE_SPRINT_TOLERANCE 8.0
+#define SCARE_SPRINT_HOLD_TIME 1.5
+
+new bool:g_IsBotSprinting[MAXPLAYERS + 1];
+new Float:g_BotSprintUntil[MAXPLAYERS + 1];
 
 //pages are prop_dynamic_override
 
@@ -404,7 +408,12 @@ public Action:Timer_BotSafety(Handle:timer, any:Bot)
 		return Plugin_Stop;
 
 	if(GetClientTeam(Bot) != _:TFTeam_Red)
+	{
+		StopBotSprint(Bot);
 		return Plugin_Stop;
+	}
+
+	UpdateBotScareSprint(Bot);
 
 	//UpdateBlockers();
 		
@@ -418,7 +427,12 @@ public Action:Timer_BotStatus(Handle:timer, any:Bot)
 		return Plugin_Stop;
 
 	if(GetClientTeam(Bot) != _:TFTeam_Red)
+	{
+		StopBotSprint(Bot);
 		return Plugin_Stop;
+	}
+
+	UpdateBotScareSprint(Bot);
 		
 	if(!bEscape)
 		CheckFlagDist(Bot);
@@ -494,34 +508,58 @@ stock TeleportFuncToPage()
 	}
 }
 
-// Grab only the X/Y speed of bots for sprint-checking.
-stock float GetClientSpeed(int client)
+// Grab only the X/Y speed of bots for scare-sprint detection.
+stock Float:GetClientHorizontalSpeed(client)
 {
-    float velocity[3];
+    new Float:velocity[3];
     GetEntPropVector(client, Prop_Data, "m_vecVelocity", velocity);
 
-    return SquareRoot(
-        velocity[0] * velocity[0] +
-        velocity[1] * velocity[1]
-    );
+    return SquareRoot((velocity[0] * velocity[0]) + (velocity[1] * velocity[1]));
 }
 
-// If my detected speed is greater than 190 Hammer Units, sprint away!
-  // except you didn't define yo shi right and now we gotta run a fade for yo sorry ass  
-if(speed > BASE_SPEED)
+stock bool:IsBotInScareSprintSpeed(client)
 {
-    if(!g_IsBotSprinting[client])
-    {
-        FakeClientCommand(client, "+sprint");
-        g_IsBotSprinting[client] = true;
-    }
+    new Float:speed = GetClientHorizontalSpeed(client);
+    return speed >= (SCARE_SPRINT_SPEED - SCARE_SPRINT_TOLERANCE) && speed <= (SCARE_SPRINT_SPEED + SCARE_SPRINT_TOLERANCE);
 }
-else
+
+stock StopBotSprint(client)
 {
     if(g_IsBotSprinting[client])
     {
         FakeClientCommand(client, "-sprint");
         g_IsBotSprinting[client] = false;
+    }
+}
+
+stock UpdateBotScareSprint(client)
+{
+    if(!IsValidClient(client) || !IsPlayerAlive(client) || GetClientTeam(client) != _:TFTeam_Red || !IsFakeClient(client))
+    {
+        if(client > 0 && client <= MaxClients)
+        {
+            g_BotSprintUntil[client] = 0.0;
+            StopBotSprint(client);
+        }
+        return;
+    }
+
+    new Float:now = GetGameTime();
+
+    if(IsBotInScareSprintSpeed(client))
+        g_BotSprintUntil[client] = now + SCARE_SPRINT_HOLD_TIME;
+
+    if(now <= g_BotSprintUntil[client])
+    {
+        if(!g_IsBotSprinting[client])
+        {
+            FakeClientCommand(client, "+sprint");
+            g_IsBotSprinting[client] = true;
+        }
+    }
+    else
+    {
+        StopBotSprint(client);
     }
 }
 
